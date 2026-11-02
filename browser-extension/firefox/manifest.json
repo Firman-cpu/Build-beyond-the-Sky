@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Sky-1 Browser Metadata Bridge",
+  "version": "1.0.0",
+  "description": "Connects browser media metadata to Sky-1 desktop shell.",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sky1-music-bridge@sky-1.local",
+      "strict_min_version": "109.0"
+    }
+  },
+
+  "permissions": ["nativeMessaging"],
+
+  "background": {
+    "scripts": ["background.js"]
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

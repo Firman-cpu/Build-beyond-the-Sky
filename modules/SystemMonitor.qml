@@ -1,249 +1,474 @@
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Io
 
 Item {
     id: root
 
     property var systemService: null
+    property bool opened: false
+    property bool sweeping: false
 
     implicitWidth: 300
-    implicitHeight: 260
+    implicitHeight: 190
+
+    width: implicitWidth
+    height: implicitHeight
+
+    // ==========================================
+    // ENTRY / EXIT ANIMATION
+    // ==========================================
+
+    visible: opened || opacity > 0.01
+
+    opacity: opened ? 1 : 0
+    scale: opened ? 1 : 0.94
+    y: opened ? 0 : 12
+
+    transformOrigin: Item.Bottom
+
+    Behavior on opacity {
+        NumberAnimation {
+            duration: 180
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on scale {
+        SpringAnimation {
+            spring: 2.4
+            damping: 0.24
+            mass: 0.7
+        }
+    }
+
+    Behavior on y {
+        SpringAnimation {
+            spring: 2.2
+            damping: 0.25
+            mass: 0.7
+        }
+    }
+
+    // ==========================================
+    // SYSTEM DATA
+    // ==========================================
+
+    readonly property real cpuUsage:
+        systemService ? systemService.cpuUsage : 0
+
+    readonly property real ramUsage:
+        systemService ? systemService.ramUsage : 0
+
+    readonly property real ramUsedMB:
+        systemService ? systemService.ramUsed : 0
+
+    readonly property real ramTotalMB:
+        systemService ? systemService.ramTotal : 0
+
+    property real swapTotalMB: 0
+    property real swapUsedMB: 0
+
+    readonly property bool hasSwap: swapTotalMB > 0
+
+    readonly property real swapUsage:
+        hasSwap ? (swapUsedMB / swapTotalMB) * 100 : 0
+
+    function gb(mb) {
+        return (mb / 1024).toFixed(1)
+    }
+
+    function parseSwap(rawText) {
+        const total = /SwapTotal:\s+(\d+)/.exec(rawText)
+        const free = /SwapFree:\s+(\d+)/.exec(rawText)
+
+        if (!total || !free)
+            return
+
+        const totalMB = parseInt(total[1], 10) / 1024
+        const freeMB = parseInt(free[1], 10) / 1024
+
+        swapTotalMB = totalMB
+        swapUsedMB = Math.max(0, totalMB - freeMB)
+    }
+
+    // ==========================================
+    // SWAP READER
+    // ==========================================
+
+    FileView {
+        id: meminfo
+
+        path: "/proc/meminfo"
+
+        onLoaded: root.parseSwap(text())
+    }
+
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+
+        onTriggered: meminfo.reload()
+    }
+
+    // ==========================================
+    // SPEEDOMETER ANIMATION
+    // ==========================================
+
+    function animateDials() {
+        sweeping = true
+
+        for (let i = 0; i < dialRepeater.count; i++) {
+            const dial = dialRepeater.itemAt(i)
+
+            if (dial)
+                dial.shown = 0
+        }
+
+        sweepTimer.restart()
+    }
+
+    function syncDials() {
+        if (!opened || sweeping)
+            return
+
+        for (let i = 0; i < dialRepeater.count; i++) {
+            const dial = dialRepeater.itemAt(i)
+
+            if (dial)
+                dial.shown = dial.goal
+        }
+    }
+
+    onOpenedChanged: {
+        if (opened) {
+            animateDials()
+        } else {
+            sweeping = false
+            sweepTimer.stop()
+
+            for (let i = 0; i < dialRepeater.count; i++) {
+                const dial = dialRepeater.itemAt(i)
+
+                if (dial)
+                    dial.shown = 0
+            }
+        }
+    }
+
+    Timer {
+        id: sweepTimer
+
+        interval: 180
+        repeat: false
+
+        onTriggered: {
+            root.sweeping = false
+            root.syncDials()
+        }
+    }
+
+    // ==========================================
+    // MAIN LAYOUT
+    // ==========================================
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 12
+        spacing: 7
 
+        // ======================================
         // HEADER
+        // ======================================
+
         RowLayout {
             Layout.fillWidth: true
 
+            spacing: 8
+
             ColumnLayout {
-                spacing: 2
+                spacing: 1
 
                 Text {
                     text: "System Monitor"
-                    color: "#E5F8FF"
-                    font.pixelSize: 16
+                    color: "#DDF5FF"
+
+                    font.pixelSize: 15
                     font.weight: Font.DemiBold
                 }
 
                 Text {
                     text: "Hardware performance"
-                    color: "#819BB3"
-                    font.pixelSize: 10
+                    color: "#829FB8"
+
+                    font.pixelSize: 9
                 }
             }
 
             Item {
                 Layout.fillWidth: true
             }
-
-            Rectangle {
-                width: 7
-                height: 7
-                radius: 4
-                color: "#65E6B5"
-            }
-
-            Text {
-                text: "LIVE"
-                color: "#65E6B5"
-                font.pixelSize: 9
-                font.weight: Font.Bold
-            }
         }
 
+        // ======================================
         // SPEEDOMETERS
+        // ======================================
+
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            spacing: 8
+            spacing: 5
 
             Repeater {
+                id: dialRepeater
+
                 model: [
                     {
                         name: "CPU",
-                        color: "#75DEFF"
+                        accent: "#55BDF2"
                     },
                     {
                         name: "RAM",
-                        color: "#A78BFA"
+                        accent: "#55DCEB"
                     },
                     {
-                        name: "GPU",
-                        color: "#65E6B5"
+                        name: "SWAP",
+                        accent: "#A5E8FF"
                     }
                 ]
 
                 delegate: Item {
-                    id: gauge
+                    id: dial
 
                     required property int index
                     required property var modelData
 
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    Layout.preferredWidth: 1
 
-                    property real usage: {
-                        if (!root.systemService)
-                            return 0
-
+                    readonly property real usage: {
                         if (index === 0)
-                            return root.systemService.cpuUsage
+                            return root.cpuUsage
 
                         if (index === 1)
-                            return root.systemService.ramUsage
+                            return root.ramUsage
 
-                        return root.systemService.gpuUsage
+                        return root.swapUsage
                     }
 
-                    property string detail: {
-                        if (!root.systemService)
-                            return "Loading..."
+                    readonly property real goal: {
+                        const value = Number(usage)
 
+                        if (!Number.isFinite(value))
+                            return 0
+
+                        return Math.max(
+                            0,
+                            Math.min(100, value)
+                        ) / 100
+                    }
+
+                    readonly property string detail: {
                         if (index === 0)
                             return "Processor"
 
                         if (index === 1) {
-                            return (
-                                root.systemService.ramUsed / 1024
-                            ).toFixed(1) + " GB"
+                            return root.ramTotalMB > 0
+                                ? root.gb(root.ramUsedMB)
+                                    + " / "
+                                    + root.gb(root.ramTotalMB)
+                                    + " GB"
+                                : "Loading..."
                         }
 
-                        return (
-                            root.systemService.vramUsed / 1024
-                        ).toFixed(1) + " GB VRAM"
+                        return root.hasSwap
+                            ? root.gb(root.swapUsedMB)
+                                + " / "
+                                + root.gb(root.swapTotalMB)
+                                + " GB"
+                            : "Not configured"
                     }
+
+                    property real shown: 0
+
+                    Component.onCompleted: {
+                        shown = goal
+                    }
+
+                    onGoalChanged: {
+                        if (root.opened && !root.sweeping)
+                            shown = goal
+                    }
+
+                    Behavior on shown {
+                        SpringAnimation {
+                            spring: 2.5
+                            damping: 0.27
+                            mass: 0.75
+                            epsilon: 0.0005
+                        }
+                    }
+
+                    onShownChanged: gaugeCanvas.requestPaint()
+
+                    // ==================================
+                    // DIAL CONTENT
+                    // ==================================
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 5
+                        spacing: 3
 
                         Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            Layout.minimumHeight: 90
 
-                            Layout.minimumHeight: 95
-
-                            Canvas {
-                                id: gaugeCanvas
+                            Item {
+                                id: face
 
                                 anchors.centerIn: parent
 
                                 width: Math.min(
+                                    96,
                                     parent.width,
-                                    parent.height,
-                                    96
+                                    parent.height
                                 )
 
                                 height: width
 
-                                onPaint: {
-                                    const ctx = getContext("2d")
+                                readonly property real stroke: 7
 
-                                    ctx.clearRect(
-                                        0, 0, width, height
-                                    )
+                                readonly property real radius:
+                                    (width - stroke) / 2 - 3
 
-                                    const cx = width / 2
-                                    const cy = height / 2
-                                    const radius = width * 0.39
+                                Rectangle {
+                                    anchors.centerIn: parent
 
-                                    const startAngle = Math.PI * 0.75
-                                    const sweepAngle = Math.PI * 1.5
+                                    width: parent.width - 8
+                                    height: width
 
-                                    const progress = Math.max(
-                                        0,
-                                        Math.min(100, gauge.usage)
-                                    ) / 100
+                                    radius: width / 2
 
-                                    // Background track
-                                    ctx.beginPath()
-                                    ctx.arc(
-                                        cx,
-                                        cy,
-                                        radius,
-                                        startAngle,
-                                        startAngle + sweepAngle,
-                                        false
-                                    )
+                                    color: "#101E3548"
 
-                                    ctx.strokeStyle = "#33485D70"
-                                    ctx.lineWidth = 7
-                                    ctx.lineCap = "round"
-                                    ctx.stroke()
+                                    border.width: 1
+                                    border.color: "#224A7895"
+                                }
 
-                                    // Active gauge
-                                    if (progress > 0) {
+                                Canvas {
+                                    id: gaugeCanvas
+
+                                    anchors.fill: parent
+
+                                    onPaint: {
+                                        const ctx = getContext("2d")
+
+                                        ctx.clearRect(
+                                            0,
+                                            0,
+                                            width,
+                                            height
+                                        )
+
+                                        const cx = width / 2
+                                        const cy = height / 2
+                                        const radius = face.radius
+
+                                        const start =
+                                            135 * Math.PI / 180
+
+                                        const sweep =
+                                            270 * Math.PI / 180
+
                                         ctx.beginPath()
 
                                         ctx.arc(
                                             cx,
                                             cy,
                                             radius,
-                                            startAngle,
-                                            startAngle + (
-                                                sweepAngle * progress
-                                            ),
+                                            start,
+                                            start + sweep,
                                             false
                                         )
 
-                                        ctx.strokeStyle =
-                                            gauge.modelData.color
-
-                                        ctx.lineWidth = 7
+                                        ctx.lineWidth = face.stroke
                                         ctx.lineCap = "round"
+                                        ctx.strokeStyle = "#35445F73"
                                         ctx.stroke()
+
+                                        if (dial.shown > 0.001) {
+                                            ctx.beginPath()
+
+                                            ctx.arc(
+                                                cx,
+                                                cy,
+                                                radius,
+                                                start,
+                                                start + sweep * dial.shown,
+                                                false
+                                            )
+
+                                            ctx.lineWidth = face.stroke
+                                            ctx.lineCap = "round"
+
+                                            ctx.strokeStyle =
+                                                dial.modelData.accent
+
+                                            ctx.stroke()
+                                        }
                                     }
+
+                                    Component.onCompleted: requestPaint()
+
+                                    onWidthChanged: requestPaint()
+                                    onHeightChanged: requestPaint()
                                 }
 
-                                Connections {
-                                    target: gauge
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: 1
 
-                                    function onUsageChanged() {
-                                        gaugeCanvas.requestPaint()
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+
+                                        text: Math.round(
+                                            dial.shown * 100
+                                        ) + "%"
+
+                                        color: "#E5F8FF"
+
+                                        font.pixelSize: 21
+                                        font.weight: Font.DemiBold
                                     }
-                                }
 
-                                Component.onCompleted: {
-                                    requestPaint()
-                                }
-                            }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
 
-                            // Center value
-                            Column {
-                                anchors.centerIn: parent
-                                spacing: 1
+                                        text: "USAGE"
 
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
+                                        color: "#718DA5"
 
-                                    text: gauge.usage.toFixed(0)
-
-                                    color: "#F0FAFF"
-                                    font.pixelSize: 21
-                                    font.weight: Font.DemiBold
-                                }
-
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-
-                                    text: "%"
-                                    color: "#819BB3"
-                                    font.pixelSize: 9
+                                        font.pixelSize: 7
+                                        font.weight: Font.Medium
+                                        font.letterSpacing: 1.2
+                                    }
                                 }
                             }
                         }
 
-                        // Gauge label
+                        // ==================================
+                        // LABEL
+                        // ==================================
+
                         Text {
                             Layout.fillWidth: true
 
-                            text: gauge.modelData.name
-
-                            color: gauge.modelData.color
+                            text: dial.modelData.name
+                            color: dial.modelData.accent
 
                             font.pixelSize: 11
                             font.weight: Font.Bold
@@ -251,15 +476,17 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                         }
 
-                        // Detail
+                        // ==================================
+                        // DETAIL
+                        // ==================================
+
                         Text {
                             Layout.fillWidth: true
 
-                            text: gauge.detail
+                            text: dial.detail
+                            color: "#829FB8"
 
-                            color: "#819BB3"
-
-                            font.pixelSize: 9
+                            font.pixelSize: 8
 
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
@@ -268,43 +495,13 @@ Item {
                 }
             }
         }
+    }
 
-        // FOOTER
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 34
+    // ==========================================
+    // INITIALIZATION
+    // ==========================================
 
-            radius: 9
-            color: "#20101C2D"
-
-            RowLayout {
-                anchors.fill: parent
-
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-
-                Text {
-                    text: "RAM TOTAL"
-                    color: "#819BB3"
-                    font.pixelSize: 9
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                Text {
-                    text: root.systemService
-                        ? (
-                            root.systemService.ramTotal / 1024
-                        ).toFixed(1) + " GB"
-                        : "--"
-
-                    color: "#E5F8FF"
-                    font.pixelSize: 10
-                    font.weight: Font.DemiBold
-                }
-            }
-        }
+    Component.onCompleted: {
+        meminfo.reload()
     }
 }

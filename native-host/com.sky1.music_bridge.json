@@ -1,0 +1,7 @@
+{
+  "name": "com.sky1.music_bridge",
+  "description": "Sky-1 Browser Music Metadata Bridge",
+  "path": "/home/Firman/Projects/Sky-1/native-host/sky1_native_host.py",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://fnomlkccdilomdbkaacbojdoapfajiik/"]
+}

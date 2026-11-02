@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Sky-1 Browser Metadata Bridge",
+  "version": "1.0.0",
+  "description": "Connects browser media metadata to Sky-1 desktop shell.",
+
+  "permissions": ["nativeMessaging"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

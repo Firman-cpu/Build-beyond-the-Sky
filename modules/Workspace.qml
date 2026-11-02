@@ -1,4 +1,3 @@
-
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
@@ -25,9 +24,9 @@ Item {
         "rounded-square",
         "pentagon",
         "parallelogram",
-        "triangle",
-        "diamond",
-        "circle"
+        "octagon",
+        "kite",
+        "blob"
     ]
 
     property int activeIndex: Hyprland.focusedWorkspace?.id ?? 0
@@ -158,11 +157,12 @@ Item {
         width: Math.max(1, root.activeRight - root.activeLeft)
         height: 25
 
-        radius: 9
+        // Full pill shape
+        radius: height / 2
 
         visible: root.activeIndex >= 1 && root.activeIndex <= 10
 
-        color: "#506DDBF5"
+        color: "#4075DEFF"
     }
 
     // ==========================================
@@ -178,17 +178,17 @@ Item {
         width: Math.max(1, root.hoverRight - root.hoverLeft)
         height: 25
 
-        radius: 9
+        // Full pill shape
+        radius: height / 2
 
-        visible: root.hoverIndex >= 1 && root.hoverIndex <= 10
+        color: "#1F75DEFF"
 
-        color: "#286DDBF5"
-
-        opacity: visible ? 1 : 0
+        opacity: root.hoverIndex >= 1 && root.hoverIndex <= 10 ? 1 : 0
+        visible: opacity > 0.01
 
         Behavior on opacity {
             NumberAnimation {
-                duration: 100
+                duration: 120
             }
         }
     }
@@ -307,6 +307,9 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
+
+                    // Active = full, others slightly dimmed
+                    opacity: workspaceItem.active ? 1.0 : 0.7
 
                     scale: workspaceItem.active ? 1.12 : 1.0
 
